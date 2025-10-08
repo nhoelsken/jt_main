@@ -1,0 +1,100 @@
+services:
+  jt_rabbit_mq:
+    image: rabbitmq:3
+    container_name: jt_rabbit_mq
+    networks:
+      - jt_net
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    restart: unless-stopped
+    command: >
+      bash -c "rabbitmq-plugins enable --offline rabbitmq_management && rabbitmq-server"
+
+  jt_redis:
+    image: redis:7
+    container_name: jt_redis
+    networks:
+      - jt_net
+    ports:
+      - "6379:6379"
+    volumes:
+      - ~/docker/jt_main/redis-data:/data
+    restart: unless-stopped
+    command: ["--save", "300", "1", "--loglevel", "warning"]
+
+  jt_bot_engine:
+    build:
+      context: ~/docker/jt_bot_engine
+    container_name: jt_bot_engine
+    networks:
+      - jt_net
+    restart: unless-stopped
+    depends_on:
+      - jt_rabbit_mq
+      - jt_redis
+    environment:
+      PYTHONPATH: /app/src
+      rabbitmq_host: jt_rabbit_mq
+      redis_host: jt_redis
+
+  jt_hub:
+    build: ~/docker/jt_hub
+    container_name: jt_hub
+    networks:
+      - jt_net
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    depends_on:
+      - jt_rabbit_mq
+      - jt_redis
+    environment:
+      RABBITMQ_HOST: jt_rabbit_mq
+      REDIS_HOST: jt_redis
+      REDIS_PORT: 6379
+      SERVE_FRONTEND: "true"
+      JAYTRADE_DATA: /app/data
+      HUBBY_HOST: jt_hub
+    volumes:
+      - /home/tj/SYNCTHING/Jaytrade_Data:/app/data
+
+  go_ctrade_demo:
+    build:
+      context: ~/docker/go_ctrade
+    container_name: go_ctrade_demo
+    networks:
+      - jt_net
+    restart: unless-stopped
+    environment:
+      REDIS_URL: "redis://jt_redis:6379"
+      RABBITMQ_URL: "amqp://guest:guest@jt_rabbit_mq:5672/"
+      POSTGRES_HOST: 192.168.178.69
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: jt_database
+      POSTGRES_USER: jt_user
+      POSTGRES_PASSWORD: secure_password_2024
+
+    command: ["./run_ctrade.sh"]
+
+  go_ctrade_live:
+    build:
+      context: ~/docker/go_ctrade
+    container_name: go_ctrade_live
+    networks:
+      - jt_net
+    restart: unless-stopped
+    environment:
+      REDIS_URL: "redis://jt_redis:6379"
+      RABBITMQ_URL: "amqp://guest:guest@jt_rabbit_mq:5672/"
+      POSTGRES_HOST: 192.168.178.69
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: jt_database
+      POSTGRES_USER: jt_user
+      POSTGRES_PASSWORD: secure_password_2024
+
+    command: ["./run_ctrade.sh", "--live"]
+
+networks:
+  jt_net:
+    external: true
